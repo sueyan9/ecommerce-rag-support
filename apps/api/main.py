@@ -1,14 +1,15 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue, Distance, VectorParams
 from sentence_transformers import SentenceTransformer
 from typing import List
-import os
 import uuid
-import openai
+from openai import OpenAI
 
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 load_dotenv()
 app = FastAPI(title="Ecom RAG Support API")
 
@@ -23,9 +24,10 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "deepseek-chat")
 # init
 embedder = SentenceTransformer(EMBED_MODEL)
 client = QdrantClient(url=QDRANT_URL)
-openai.api_key = OPENAI_API_KEY
-if OPENAI_BASE_URL:
-    openai.base_url = OPENAI_BASE_URL
+llm_client= OpenAI(
+     api_key=OPENAI_API_KEY,
+     base_url=OPENAI_BASE_URL or None,  # None 时走默认
+ )
 
 class IngestItem(BaseModel):
     text: str
@@ -69,13 +71,36 @@ def chat(req: ChatRequest):
     context_block = "\n\n".join([f"- {c}" for c in contexts])
     user_msg = f"Customer question: {req.query}\n\nRelevant knowledge:\n{context_block}\n\nAnswer:"
 
-    resp = openai.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ],
-        temperature=0.2,
-    )
-    answer = resp.choices[0].message.content
-    return {"answer": answer, "contexts": contexts}
+    try:
+        # 打点看看现在用的配置
+        print(f"[LLM] base_url={OPENAI_BASE_URL}, model={OPENAI_MODEL}")
+
+        resp = llm_client.chat.completions.create(
+            model=OPENAI_MODEL,          # deepseek-chat / deepseek-reasoner
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.2,
+        )
+        answer = resp.choices[0].message.content
+        return {"answer": answer, "contexts": contexts}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
+
+        @app.get("/debug/env")
+        def debug_env():
+            return {
+                "OPENAI_BASE_URL": OPENAI_BASE_URL,
+                "OPENAI_MODEL": OPENAI_MODEL,
+                "has_OPENAI_API_KEY": bool(OPENAI_API_KEY),
+            }
+
+        @app.get("/debug/deepseek")
+        def debug_deepseek():
+            try:
+                ms = llm_client.models.list()
+                return {"ok": True, "models": [m.id for m in ms.data]}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"DeepSeek models.list failed: {e}")
