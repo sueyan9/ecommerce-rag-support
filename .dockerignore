@@ -1,0 +1,11 @@
+# 忽略本地环境配置
+.env
+*.env
+
+# 忽略虚拟环境
+.venv/
+__pycache__/
+
+# 忽略系统文件
+.DS_Store
+.idea/
