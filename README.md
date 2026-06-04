@@ -108,10 +108,12 @@ Each stored chunk includes retrieval metadata:
 - `domain`
 - `source`
 - `title`
+- `section`
 - `chunk_index`
 - `document_type`
 
 Before chunking and embedding, the ingestion script removes common markdown formatting such as headings, links, images, and bold markers to reduce retrieval noise.
+The ingestion pipeline also tracks the nearest markdown heading for each chunk so citations can show section-aware references such as `Booking Workflow / Pending Confirmation`.
 
 Questions are classified into a likely domain before retrieval. If a domain is detected confidently, the API filters Qdrant search to that metadata domain first. If not, it falls back to global retrieval.
 
@@ -146,6 +148,7 @@ Example:
       "domain": "invoice",
       "source": "invoice-rules.md",
       "title": "Invoice Rules",
+      "section": "Invoice Editing Rules",
       "chunk_index": 1,
       "score": 0.83
     }

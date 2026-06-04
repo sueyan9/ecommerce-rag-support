@@ -337,6 +337,7 @@ def ask(req: AskRequest) -> Dict[str, Any]:
             "domain": result.payload.get("domain"),
             "source": result.payload.get("source", "unknown"),
             "title": result.payload.get("title", result.payload.get("source", "unknown")),
+            "section": result.payload.get("section"),
             "chunk_index": result.payload.get("chunk_index"),
             "score": result.score,
             "evidence": build_evidence_snippet(result.payload.get("text", "")),

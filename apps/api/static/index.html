@@ -448,11 +448,12 @@
           item.className = "source-item";
 
           const title = source.title || source.source || "unknown";
+          const section = source.section || title;
           const chunk = source.chunk_index ?? "?";
           const score = Number.isFinite(source.score) ? source.score.toFixed(3) : null;
           const titleEl = document.createElement("div");
           titleEl.className = "source-title";
-          titleEl.textContent = title;
+          titleEl.textContent = section === title ? title : `${title} / ${section}`;
           item.appendChild(titleEl);
 
           const metaEl = document.createElement("div");
