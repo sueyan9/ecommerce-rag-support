@@ -434,7 +434,7 @@
 
       function renderContexts(contexts) {
         contextListEl.innerHTML = "";
-        if (!contexts || contexts.length === 0) {
+        if (!Array.isArray(contexts) || contexts.length === 0) {
           return;
         }
 
@@ -490,7 +490,7 @@
 
           answerTextEl.textContent = data.answer || "No answer returned.";
           renderSources(data.sources || []);
-          const contexts = data.contexts || [];
+          const contexts = Array.isArray(data.contexts) ? data.contexts : [];
           renderContexts(contexts);
           debugBlockEl.hidden = contexts.length === 0;
           debugDetailsEl.open = false;

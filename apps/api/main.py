@@ -212,8 +212,9 @@ def chat_with_context(question: str, contexts: List[str]) -> str:
         raise HTTPException(status_code=500, detail="Ollama did not return an answer.")
     if CLEAN_THINK:
         raw_answer = re.sub(r"<think>.*?</think>", "", raw_answer, flags=re.DOTALL).strip()
-    raw_answer = re.sub(r"^\*\*?\s*answer\s*:\s*\**\s*", "", raw_answer, flags=re.IGNORECASE)
-    raw_answer = re.sub(r"^answer\s*:\s*", "", raw_answer, flags=re.IGNORECASE)
+    raw_answer = re.sub(r"(?is)\bsource snippet:\b.*$", "", raw_answer).strip()
+    raw_answer = re.sub(r"(?i)\*{0,2}\s*answer\s*:\s*\*{0,2}\s*", "", raw_answer)
+    raw_answer = re.sub(r"\n{3,}", "\n\n", raw_answer)
     return raw_answer.strip()
 
 
