@@ -39,7 +39,8 @@ class IngestItem(BaseModel):
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
-    k: int = Field(default=5, ge=1, le=10)
+    k: int = Field(default=3, ge=1, le=10)
+    debug: bool = Field(default=False)
     filters: Optional[Dict[str, Any]] = None
 
 
@@ -83,8 +84,9 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
 def chat_with_context(question: str, contexts: List[str]) -> str:
     system_prompt = (
         "You are a clinic management software support assistant. "
-        "Answer using the provided knowledge base context when possible. "
+        "Answer only from the provided knowledge base context. "
         "Be clear, practical, and concise. "
+        "Do not infer workflow details that are not explicitly supported by the context. "
         "If the knowledge base does not support the answer, say you do not know."
     )
     context_block = "\n\n".join(f"Source snippet:\n{context}" for context in contexts) if contexts else "No relevant knowledge found."
@@ -198,7 +200,14 @@ def ask(req: AskRequest) -> Dict[str, Any]:
         for result in results
     ]
     answer = chat_with_context(req.question, contexts)
-    return {"answer": answer, "sources": sources, "contexts": contexts}
+    response: Dict[str, Any] = {
+        "answer": answer,
+        "sources": sources,
+        "retrieval_scores": [result.score for result in results],
+    }
+    if req.debug:
+        response["contexts"] = contexts
+    return response
 
 
 @app.post("/chat")

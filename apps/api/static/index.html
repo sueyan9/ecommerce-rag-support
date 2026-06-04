@@ -219,6 +219,27 @@
         line-height: 1.65;
       }
 
+      .source-score {
+        margin-left: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      details.debug-panel {
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+      }
+
+      details.debug-panel summary {
+        cursor: pointer;
+        color: var(--accent-dark);
+        font-weight: 700;
+      }
+
+      details.debug-panel[hidden] {
+        display: none;
+      }
+
       .context-list {
         margin: 0;
         padding-left: 18px;
@@ -356,9 +377,11 @@
             <ol class="context-list" id="source-list"></ol>
           </div>
 
-          <div class="response-block">
-            <h3>Retrieved Context</h3>
-            <ol class="context-list" id="context-list"></ol>
+          <div class="response-block" id="debug-block" hidden>
+            <details class="debug-panel" id="debug-details">
+              <summary>Show Retrieved Context</summary>
+              <ol class="context-list" id="context-list"></ol>
+            </details>
           </div>
         </div>
       </section>
@@ -372,6 +395,8 @@
       const answerTextEl = document.getElementById("answer-text");
       const sourceListEl = document.getElementById("source-list");
       const contextListEl = document.getElementById("context-list");
+      const debugBlockEl = document.getElementById("debug-block");
+      const debugDetailsEl = document.getElementById("debug-details");
       const clearButton = document.getElementById("clear-button");
       const promptButtons = document.querySelectorAll("[data-prompt]");
 
@@ -393,7 +418,16 @@
           const item = document.createElement("li");
           const title = source.title || source.source || "unknown";
           const chunk = source.chunk_index ?? "?";
+          const score = Number.isFinite(source.score) ? source.score.toFixed(3) : null;
           item.textContent = `${title} (chunk ${chunk})`;
+
+          if (score) {
+            const scoreEl = document.createElement("span");
+            scoreEl.className = "source-score";
+            scoreEl.textContent = `score ${score}`;
+            item.appendChild(scoreEl);
+          }
+
           sourceListEl.appendChild(item);
         });
       }
@@ -427,6 +461,8 @@
         answerTextEl.textContent = "";
         sourceListEl.innerHTML = "";
         contextListEl.innerHTML = "";
+        debugBlockEl.hidden = true;
+        debugDetailsEl.open = false;
         setStatus("Ready for a question.");
       });
 
@@ -445,7 +481,7 @@
           const res = await fetch("/ask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: query, k: 5 }),
+            body: JSON.stringify({ question: query, k: 3 }),
           });
 
           const data = await res.json();
@@ -457,7 +493,10 @@
 
           answerTextEl.textContent = data.answer || "No answer returned.";
           renderSources(data.sources || []);
-          renderContexts(data.contexts || []);
+          const contexts = data.contexts || [];
+          renderContexts(contexts);
+          debugBlockEl.hidden = contexts.length === 0;
+          debugDetailsEl.open = false;
           responseEl.hidden = false;
           setStatus("Answer ready.");
         } catch (error) {

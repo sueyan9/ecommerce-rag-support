@@ -112,22 +112,21 @@ Use the demo page or call the API directly:
 ```bash
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"question":"How does branch-level invoicing work for a practitioner who works at two locations?","k":5}'
+  -d '{"question":"How does branch-level invoicing work for a practitioner who works at two locations?","k":3}'
 ```
 
 The response includes:
 
 - `answer`: grounded clinic support answer
-- `source`: primary source file for the top retrieved citation
 - `sources`: source file and chunk metadata
-- `contexts`: retrieved chunk text
+- `retrieval_scores`: similarity scores for the returned chunks
+- `contexts`: retrieved chunk text when `debug` is `true`
 
 Example:
 
 ```json
 {
   "answer": "Branch-level invoicing follows the rules defined for the practitioner's working location.",
-  "source": "invoice-rules.md",
   "sources": [
     {
       "source": "invoice-rules.md",
@@ -136,9 +135,7 @@ Example:
       "score": 0.83
     }
   ],
-  "contexts": [
-    "..."
-  ]
+  "retrieval_scores": [0.83]
 }
 ```
 
