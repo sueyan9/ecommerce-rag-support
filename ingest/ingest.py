@@ -53,45 +53,86 @@ def _split_paragraph(text: str, chunk_size: int) -> List[str]:
     return parts
 
 
-def chunk_markdown_with_sections(text: str, default_section: str, chunk_size: int = 900) -> List[Dict[str, str]]:
+def parse_markdown_sections(text: str, fallback_title: str) -> Dict[str, Any]:
     normalized = text.replace("\r\n", "\n").strip()
     if not normalized:
-        return []
+        return {"title": fallback_title, "sections": []}
 
-    paragraphs = [part.strip() for part in normalized.split("\n\n") if part.strip()]
-    chunks: List[Dict[str, str]] = []
-    current_section = default_section
-    current_chunk = ""
-    current_chunk_section = default_section
+    title = fallback_title
+    current_section: str | None = None
+    current_lines: List[str] = []
+    sections: List[Dict[str, str]] = []
 
-    for paragraph in paragraphs:
-        heading_match = re.match(r"^#{1,6}\s+(.+)$", paragraph)
-        if heading_match:
-            current_section = clean_markdown_for_embedding(heading_match.group(1)) or default_section
+    def flush_section() -> None:
+        nonlocal current_lines
+        section_text = "\n".join(current_lines).strip()
+        if not section_text:
+            current_lines = []
+            return
+        sections.append(
+            {
+                "section": current_section or title,
+                "text": section_text,
+            }
+        )
+        current_lines = []
+
+    for line in normalized.split("\n"):
+        heading_match = re.match(r"^(#{1,3})\s+(.+)$", line.strip())
+        if not heading_match:
+            current_lines.append(line)
             continue
 
+        level = len(heading_match.group(1))
+        heading_text = clean_markdown_for_embedding(heading_match.group(2)) or title
+
+        if level == 1:
+            flush_section()
+            title = heading_text
+            current_section = None
+            continue
+
+        if level in (2, 3):
+            flush_section()
+            current_section = heading_text
+            continue
+
+    flush_section()
+    return {"title": title, "sections": sections}
+
+
+def chunk_section_text(section_text: str, chunk_size: int = 900) -> List[str]:
+    paragraphs = [part.strip() for part in section_text.split("\n\n") if part.strip()]
+    if not paragraphs:
+        cleaned = clean_markdown_for_embedding(section_text)
+        return [cleaned] if cleaned else []
+
+    chunks: List[str] = []
+    current_chunk = ""
+
+    for paragraph in paragraphs:
         cleaned_paragraph = clean_markdown_for_embedding(paragraph)
         if not cleaned_paragraph:
             continue
 
-        for part in _split_paragraph(cleaned_paragraph, chunk_size):
-            if not current_chunk:
-                current_chunk = part
-                current_chunk_section = current_section
-                continue
+        if len(cleaned_paragraph) > chunk_size:
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            chunks.extend(_split_paragraph(cleaned_paragraph, chunk_size))
+            continue
 
-            if current_chunk_section == current_section:
-                candidate = f"{current_chunk}\n\n{part}"
-                if len(candidate) <= chunk_size:
-                    current_chunk = candidate
-                    continue
+        candidate = cleaned_paragraph if not current_chunk else f"{current_chunk}\n\n{cleaned_paragraph}"
+        if len(candidate) <= chunk_size:
+            current_chunk = candidate
+            continue
 
-            chunks.append({"text": current_chunk, "section": current_chunk_section})
-            current_chunk = part
-            current_chunk_section = current_section
+        if current_chunk:
+            chunks.append(current_chunk)
+        current_chunk = cleaned_paragraph
 
     if current_chunk:
-        chunks.append({"text": current_chunk, "section": current_chunk_section})
+        chunks.append(current_chunk)
 
     return chunks
 
@@ -103,22 +144,26 @@ def load_markdown_documents() -> List[Dict[str, Any]]:
     documents = []
     for path in sorted(KNOWLEDGE_BASE_DIR.glob("*.md")):
         domain = DOMAIN_BY_FILENAME.get(path.name, "general")
-        title = path.stem.replace("-", " ").title()
-        text = path.read_text(encoding="utf-8")
-        for index, chunk in enumerate(chunk_markdown_with_sections(text, default_section=title), start=1):
-            documents.append(
-                {
-                    "text": chunk["text"],
-                    "meta": {
-                        "domain": domain,
-                        "source": path.name,
-                        "title": title,
-                        "section": chunk["section"] or title,
-                        "chunk_index": index,
-                        "document_type": "markdown",
-                    },
-                }
-            )
+        fallback_title = path.stem.replace("-", " ").title()
+        parsed = parse_markdown_sections(path.read_text(encoding="utf-8"), fallback_title=fallback_title)
+        title = parsed["title"] or fallback_title
+
+        for section in parsed["sections"]:
+            section_name = section["section"] or title
+            for index, chunk_text in enumerate(chunk_section_text(section["text"]), start=1):
+                documents.append(
+                    {
+                        "text": chunk_text,
+                        "meta": {
+                            "domain": domain,
+                            "source": path.name,
+                            "title": title,
+                            "section": section_name,
+                            "chunk_index": index,
+                            "document_type": "markdown",
+                        },
+                    }
+                )
     return documents
 
 

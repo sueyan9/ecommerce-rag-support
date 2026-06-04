@@ -112,8 +112,16 @@ Each stored chunk includes retrieval metadata:
 - `chunk_index`
 - `document_type`
 
-Before chunking and embedding, the ingestion script removes common markdown formatting such as headings, links, images, and bold markers to reduce retrieval noise.
-The ingestion pipeline also tracks the nearest markdown heading for each chunk so citations can show section-aware references such as `Booking Workflow / Pending Confirmation`.
+The ingestion pipeline uses heading-aware chunking:
+
+- it reads the first `#` heading as the document title when available
+- it treats the nearest `##` or `###` heading as the section boundary
+- it stores each section as one semantic unit first
+- it only splits further inside that section when the section is too long
+
+Before embedding, the script removes common markdown formatting such as links, images, and bold markers to reduce retrieval noise while keeping section boundaries intact.
+This keeps citations section-aware, for example `Booking Workflow / Pending Confirmation`, and ensures evidence comes from the matched section chunk rather than unrelated sections.
+`chunk_index` is section-local, so `Pending Confirmation / chunk 1` and `Cancellation / chunk 1` can both exist within the same document.
 
 Questions are classified into a likely domain before retrieval. If a domain is detected confidently, the API filters Qdrant search to that metadata domain first. If not, it falls back to global retrieval.
 
