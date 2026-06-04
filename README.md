@@ -118,8 +118,29 @@ curl -X POST http://localhost:8000/ask \
 The response includes:
 
 - `answer`: grounded clinic support answer
+- `source`: primary source file for the top retrieved citation
 - `sources`: source file and chunk metadata
 - `contexts`: retrieved chunk text
+
+Example:
+
+```json
+{
+  "answer": "Branch-level invoicing follows the rules defined for the practitioner's working location.",
+  "source": "invoice-rules.md",
+  "sources": [
+    {
+      "source": "invoice-rules.md",
+      "title": "Invoice Rules",
+      "chunk_index": 1,
+      "score": 0.83
+    }
+  ],
+  "contexts": [
+    "..."
+  ]
+}
+```
 
 ## What should not be committed to GitHub
 
@@ -137,14 +158,40 @@ Do not commit:
 
 This repository should contain demo content only.
 
-## Future roadmap
+## Milestones
 
-- agent workflow for more structured support resolution
-- tool calling for workflow-aware answers
-- retrieval and answer evaluation
-- guardrails for unsupported or sensitive requests
-- observability for retrieval quality and model behavior
-- feedback loop for improving documents and prompts
+### v0.1
+
+- `Local Ollama integration`
+- `Qdrant vector database`
+- `Markdown knowledge base`
+- `Knowledge ingestion pipeline`
+- `FastAPI support API`
+- `Source-grounded answers`
+
+### Sprint 2
+
+- `Source Citation`
+- return a direct citation field in the API response, for example `"source": "invoice-rules.md"`
+- keep chunk-level metadata so the UI and downstream services can show richer evidence later
+
+### Sprint 3
+
+- `Feedback`
+- add `👍` and `👎` feedback capture
+- store feedback in a database for prompt and retrieval tuning
+
+### Sprint 4
+
+- `Evaluation`
+- add a simple evaluation table with `Question`, `Expected`, `Actual`, and `Score`
+- use this to measure retrieval and answer quality more systematically
+- this is the point where the project starts moving from app prototype toward AI engineering workflow
+
+### Sprint 5
+
+- `Agent Router`
+- route incoming questions to specialized agents such as `Booking Agent`, `Invoice Agent`, `Policy Agent`, and `Support Agent`
 
 ## References
 

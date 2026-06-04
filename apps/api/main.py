@@ -179,12 +179,13 @@ def ingest(items: List[IngestItem]) -> Dict[str, Any]:
 @app.post("/ask")
 def ask(req: AskRequest) -> Dict[str, Any]:
     query_vector = embed_texts([req.question])[0]
-    results = qdrant.search(
+    response = qdrant.query_points(
         collection_name=COLLECTION,
-        query_vector=query_vector,
+        query=query_vector,
         limit=req.k,
         query_filter=build_filter(req.filters),
     )
+    results = response.points
 
     contexts = [result.payload.get("text", "") for result in results]
     sources = [
