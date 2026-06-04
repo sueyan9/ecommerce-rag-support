@@ -435,9 +435,6 @@
       function renderContexts(contexts) {
         contextListEl.innerHTML = "";
         if (!contexts || contexts.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No context was returned from retrieval.";
-          contextListEl.appendChild(item);
           return;
         }
 
@@ -481,7 +478,7 @@
           const res = await fetch("/ask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question: query, k: 3 }),
+            body: JSON.stringify({ question: query, k: 3, debug: true }),
           });
 
           const data = await res.json();

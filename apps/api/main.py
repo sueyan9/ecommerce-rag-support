@@ -182,10 +182,11 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
 def chat_with_context(question: str, contexts: List[str]) -> str:
     system_prompt = (
         "You are a clinic management software support assistant. "
-        "Answer only from the provided knowledge base context. "
-        "Be clear, practical, and concise. "
-        "Do not infer workflow details that are not explicitly supported by the context. "
-        "If the knowledge base does not support the answer, say you do not know."
+        "Only answer using the provided knowledge base context. "
+        "Do not add assumptions or extra workflow rules. "
+        "If the context does not explicitly support the answer, say you could not find that information in the knowledge base. "
+        "Keep the answer concise and practical. "
+        "Do not include headings such as 'Answer:' or markdown labels."
     )
     context_block = "\n\n".join(f"Source snippet:\n{context}" for context in contexts) if contexts else "No relevant knowledge found."
     payload = {
@@ -198,7 +199,7 @@ def chat_with_context(question: str, contexts: List[str]) -> str:
                 "content": (
                     f"Clinic support question: {question}\n\n"
                     f"Knowledge base context:\n{context_block}\n\n"
-                    "Answer with a direct support response."
+                    "Answer only from the provided context. Do not invent details."
                 ),
             },
         ],
@@ -209,8 +210,10 @@ def chat_with_context(question: str, contexts: List[str]) -> str:
     if not raw_answer:
         raise HTTPException(status_code=500, detail="Ollama did not return an answer.")
     if CLEAN_THINK:
-        return re.sub(r"<think>.*?</think>", "", raw_answer, flags=re.DOTALL).strip()
-    return raw_answer
+        raw_answer = re.sub(r"<think>.*?</think>", "", raw_answer, flags=re.DOTALL).strip()
+    raw_answer = re.sub(r"^\*\*?\s*answer\s*:\s*\**\s*", "", raw_answer, flags=re.IGNORECASE)
+    raw_answer = re.sub(r"^answer\s*:\s*", "", raw_answer, flags=re.IGNORECASE)
+    return raw_answer.strip()
 
 
 def build_filter(filter_values: Optional[Dict[str, Any]]) -> Optional[Filter]:

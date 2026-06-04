@@ -14,7 +14,7 @@ from apps.api.main import COLLECTION, EMBEDDING_MODEL, QDRANT_API_KEY, QDRANT_UR
 
 load_dotenv()
 
-KNOWLEDGE_BASE_DIR = ROOT_DIR / "knowledge-base"
+KNOWLEDGE_BASE_DIR = ROOT_DIR / "Demo-knowledge-base"
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
 DOMAIN_BY_FILENAME = {

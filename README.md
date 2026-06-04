@@ -132,6 +132,8 @@ The response includes:
 - `used_domain_filter`: whether retrieval was constrained to a single domain
 - `contexts`: retrieved chunk text when `debug` is `true`
 
+The demo UI sends `debug: true` so retrieved context can be inspected in the collapsible debug panel.
+
 Example:
 
 ```json
