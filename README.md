@@ -111,6 +111,8 @@ Each stored chunk includes retrieval metadata:
 - `chunk_index`
 - `document_type`
 
+Before chunking and embedding, the ingestion script removes common markdown formatting such as headings, links, images, and bold markers to reduce retrieval noise.
+
 Questions are classified into a likely domain before retrieval. If a domain is detected confidently, the API filters Qdrant search to that metadata domain first. If not, it falls back to global retrieval.
 
 ## How to ask questions

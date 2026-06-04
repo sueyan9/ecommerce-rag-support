@@ -186,6 +186,7 @@ def chat_with_context(question: str, contexts: List[str]) -> str:
         "Do not add assumptions or extra workflow rules. "
         "If the context does not explicitly support the answer, say you could not find that information in the knowledge base. "
         "Keep the answer concise and practical. "
+        "Mention the source title when possible, such as 'Based on Booking Workflow...'. "
         "Do not include headings such as 'Answer:' or markdown labels."
     )
     context_block = "\n\n".join(f"Source snippet:\n{context}" for context in contexts) if contexts else "No relevant knowledge found."

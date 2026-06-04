@@ -1,4 +1,5 @@
 import sys
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -27,6 +28,15 @@ DOMAIN_BY_FILENAME = {
     "troubleshooting.md": "troubleshooting",
     "user-guide.md": "general",
 }
+
+
+def clean_markdown_for_embedding(text: str) -> str:
+    text = text.replace("\r\n", "\n")
+    text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    return text.strip()
 
 
 def chunk_markdown(text: str, chunk_size: int = 900) -> List[str]:
@@ -65,7 +75,7 @@ def load_markdown_documents() -> List[Dict[str, Any]]:
     documents = []
     for path in sorted(KNOWLEDGE_BASE_DIR.glob("*.md")):
         domain = DOMAIN_BY_FILENAME.get(path.name, "general")
-        text = path.read_text(encoding="utf-8")
+        text = clean_markdown_for_embedding(path.read_text(encoding="utf-8"))
         for index, chunk in enumerate(chunk_markdown(text), start=1):
             documents.append(
                 {
