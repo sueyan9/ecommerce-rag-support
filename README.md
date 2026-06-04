@@ -103,7 +103,15 @@ You can add more demo markdown files to that folder and rerun:
 python ingest/ingest.py
 ```
 
-Each stored chunk includes simple source metadata so answers can cite where the retrieved context came from.
+Each stored chunk includes retrieval metadata:
+
+- `domain`
+- `source`
+- `title`
+- `chunk_index`
+- `document_type`
+
+Questions are classified into a likely domain before retrieval. If a domain is detected confidently, the API filters Qdrant search to that metadata domain first. If not, it falls back to global retrieval.
 
 ## How to ask questions
 
@@ -120,6 +128,8 @@ The response includes:
 - `answer`: grounded clinic support answer
 - `sources`: source file and chunk metadata
 - `retrieval_scores`: similarity scores for the returned chunks
+- `detected_domain`: domain predicted from the question, or `null`
+- `used_domain_filter`: whether retrieval was constrained to a single domain
 - `contexts`: retrieved chunk text when `debug` is `true`
 
 Example:
@@ -129,13 +139,16 @@ Example:
   "answer": "Branch-level invoicing follows the rules defined for the practitioner's working location.",
   "sources": [
     {
+      "domain": "invoice",
       "source": "invoice-rules.md",
       "title": "Invoice Rules",
       "chunk_index": 1,
       "score": 0.83
     }
   ],
-  "retrieval_scores": [0.83]
+  "retrieval_scores": [0.83],
+  "detected_domain": "invoice",
+  "used_domain_filter": true
 }
 ```
 

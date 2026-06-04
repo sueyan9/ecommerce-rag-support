@@ -4,8 +4,9 @@ import re
 import urllib.error
 import urllib.request
 import uuid
+from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -30,6 +31,103 @@ DEMO_PAGE = BASE_DIR / "static" / "index.html"
 
 app = FastAPI(title="Clinic RAG Support API")
 qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+
+DOMAIN_KEYWORDS = {
+    "booking": {
+        "booking",
+        "bookings",
+        "appointment",
+        "appointments",
+        "confirm",
+        "confirmation",
+        "pending confirmation",
+        "reschedule",
+        "rescheduling",
+        "cancel",
+        "cancellation",
+        "draft booking",
+    },
+    "invoice": {
+        "invoice",
+        "invoices",
+        "billing",
+        "bill",
+        "bills",
+        "fee amount",
+        "finalized",
+        "finalise",
+        "finalize",
+    },
+    "pricing": {
+        "pricing",
+        "price",
+        "prices",
+        "fee",
+        "fees",
+        "discount",
+        "discounts",
+        "rate",
+        "rates",
+        "charge",
+        "charges",
+        "cost",
+        "costs",
+    },
+    "privacy": {
+        "privacy",
+        "consent",
+        "sensitive",
+        "confidential",
+        "patient note",
+        "patient notes",
+        "access control",
+        "personal data",
+        "data retention",
+    },
+    "practitioner_schedule": {
+        "schedule",
+        "schedules",
+        "availability",
+        "leave",
+        "shift",
+        "shifts",
+        "calendar",
+        "calendar view",
+        "practitioner availability",
+        "time block",
+        "time blocks",
+    },
+    "branch_management": {
+        "branch",
+        "branches",
+        "location",
+        "locations",
+        "multi-branch",
+        "multi branch",
+        "branch transfer",
+    },
+    "troubleshooting": {
+        "troubleshooting",
+        "troubleshoot",
+        "error",
+        "errors",
+        "issue",
+        "issues",
+        "problem",
+        "problems",
+        "not working",
+        "failed",
+        "failure",
+        "debug",
+    },
+    "general": {
+        "user guide",
+        "overview",
+        "general",
+        "how to use",
+        "how do i use",
+    },
+}
 
 
 class IngestItem(BaseModel):
@@ -123,6 +221,35 @@ def build_filter(filter_values: Optional[Dict[str, Any]]) -> Optional[Filter]:
     )
 
 
+def classify_question_domain(question: str) -> Tuple[Optional[str], bool]:
+    normalized = question.lower()
+    scores: Counter[str] = Counter()
+
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in normalized:
+                scores[domain] += 1
+
+    if not scores:
+        return None, False
+
+    domain, score = scores.most_common(1)[0]
+    second_score = scores.most_common(2)[1][1] if len(scores) > 1 else 0
+    is_confident = score >= 2 or (score == 1 and second_score == 0 and domain != "general")
+
+    if not is_confident:
+        return None, False
+    return domain, True
+
+
+def merge_filters(*filter_sets: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    merged: Dict[str, Any] = {}
+    for filter_set in filter_sets:
+        if filter_set:
+            merged.update(filter_set)
+    return merged or None
+
+
 def _get_collection_dim(info: Any) -> Optional[int]:
     try:
         return info.config.params.vectors.size
@@ -180,18 +307,21 @@ def ingest(items: List[IngestItem]) -> Dict[str, Any]:
 
 @app.post("/ask")
 def ask(req: AskRequest) -> Dict[str, Any]:
+    detected_domain, used_domain_filter = classify_question_domain(req.question)
+    effective_filters = merge_filters(req.filters, {"domain": detected_domain} if used_domain_filter else None)
     query_vector = embed_texts([req.question])[0]
     response = qdrant.query_points(
         collection_name=COLLECTION,
         query=query_vector,
         limit=req.k,
-        query_filter=build_filter(req.filters),
+        query_filter=build_filter(effective_filters),
     )
     results = response.points
 
     contexts = [result.payload.get("text", "") for result in results]
     sources = [
         {
+            "domain": result.payload.get("domain"),
             "source": result.payload.get("source", "unknown"),
             "title": result.payload.get("title", result.payload.get("source", "unknown")),
             "chunk_index": result.payload.get("chunk_index"),
@@ -204,9 +334,12 @@ def ask(req: AskRequest) -> Dict[str, Any]:
         "answer": answer,
         "sources": sources,
         "retrieval_scores": [result.score for result in results],
+        "detected_domain": detected_domain,
+        "used_domain_filter": used_domain_filter,
     }
     if req.debug:
         response["contexts"] = contexts
+        response["effective_filters"] = effective_filters
     return response
 
 

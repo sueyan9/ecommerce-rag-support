@@ -17,6 +17,17 @@ load_dotenv()
 KNOWLEDGE_BASE_DIR = ROOT_DIR / "knowledge-base"
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
+DOMAIN_BY_FILENAME = {
+    "booking-workflow.md": "booking",
+    "invoice-rules.md": "invoice",
+    "pricing-policy.md": "pricing",
+    "privacy-policy.md": "privacy",
+    "practitioner-schedule.md": "practitioner_schedule",
+    "branch-management.md": "branch_management",
+    "troubleshooting.md": "troubleshooting",
+    "user-guide.md": "general",
+}
+
 
 def chunk_markdown(text: str, chunk_size: int = 900) -> List[str]:
     normalized = text.replace("\r\n", "\n").strip()
@@ -53,12 +64,14 @@ def load_markdown_documents() -> List[Dict[str, Any]]:
 
     documents = []
     for path in sorted(KNOWLEDGE_BASE_DIR.glob("*.md")):
+        domain = DOMAIN_BY_FILENAME.get(path.name, "general")
         text = path.read_text(encoding="utf-8")
         for index, chunk in enumerate(chunk_markdown(text), start=1):
             documents.append(
                 {
                     "text": chunk,
                     "meta": {
+                        "domain": domain,
                         "source": path.name,
                         "title": path.stem.replace("-", " ").title(),
                         "chunk_index": index,
