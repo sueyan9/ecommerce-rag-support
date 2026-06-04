@@ -225,6 +225,35 @@
         font-size: 13px;
       }
 
+      .source-item {
+        margin-bottom: 12px;
+      }
+
+      .source-title {
+        font-weight: 700;
+      }
+
+      .source-meta {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      details.source-evidence {
+        margin-top: 8px;
+      }
+
+      details.source-evidence summary {
+        cursor: pointer;
+        color: var(--accent-dark);
+        font-weight: 700;
+      }
+
+      .source-evidence-copy {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+
       details.debug-panel {
         border-top: 1px solid var(--line);
         padding-top: 14px;
@@ -416,16 +445,43 @@
 
         sources.forEach((source) => {
           const item = document.createElement("li");
+          item.className = "source-item";
+
           const title = source.title || source.source || "unknown";
           const chunk = source.chunk_index ?? "?";
           const score = Number.isFinite(source.score) ? source.score.toFixed(3) : null;
-          item.textContent = `${title} (chunk ${chunk})`;
+          const titleEl = document.createElement("div");
+          titleEl.className = "source-title";
+          titleEl.textContent = title;
+          item.appendChild(titleEl);
+
+          const metaEl = document.createElement("div");
+          metaEl.className = "source-meta";
+          metaEl.textContent = `Chunk ${chunk}`;
 
           if (score) {
             const scoreEl = document.createElement("span");
             scoreEl.className = "source-score";
             scoreEl.textContent = `score ${score}`;
-            item.appendChild(scoreEl);
+            metaEl.appendChild(scoreEl);
+          }
+
+          item.appendChild(metaEl);
+
+          if (source.evidence) {
+            const evidenceDetails = document.createElement("details");
+            evidenceDetails.className = "source-evidence";
+
+            const evidenceSummary = document.createElement("summary");
+            evidenceSummary.textContent = "View Evidence";
+            evidenceDetails.appendChild(evidenceSummary);
+
+            const evidenceCopy = document.createElement("p");
+            evidenceCopy.className = "source-evidence-copy";
+            evidenceCopy.textContent = source.evidence;
+            evidenceDetails.appendChild(evidenceCopy);
+
+            item.appendChild(evidenceDetails);
           }
 
           sourceListEl.appendChild(item);

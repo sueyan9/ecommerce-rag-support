@@ -255,6 +255,14 @@ def merge_filters(*filter_sets: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
     return merged or None
 
 
+def build_evidence_snippet(text: str, max_length: int = 280) -> str:
+    snippet = re.sub(r"\s+", " ", text or "").strip()
+    if len(snippet) <= max_length:
+        return snippet
+    truncated = snippet[:max_length].rsplit(" ", 1)[0].strip()
+    return f"{truncated}..."
+
+
 def _get_collection_dim(info: Any) -> Optional[int]:
     try:
         return info.config.params.vectors.size
@@ -331,6 +339,7 @@ def ask(req: AskRequest) -> Dict[str, Any]:
             "title": result.payload.get("title", result.payload.get("source", "unknown")),
             "chunk_index": result.payload.get("chunk_index"),
             "score": result.score,
+            "evidence": build_evidence_snippet(result.payload.get("text", "")),
         }
         for result in results
     ]
