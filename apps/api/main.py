@@ -1,71 +1,138 @@
+import json
 import os
 import re
+import urllib.error
+import urllib.request
 import uuid
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    PointStruct, Filter, FieldCondition, MatchValue,
-    VectorParams, Distance
-)
-from openai import OpenAI
+from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
 
-# ---- Env & init -------------------------------------------------------------
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 load_dotenv()
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-COLLECTION = os.getenv("QDRANT_COLLECTION", "ecom_knowledge")
-
-# Ollama (OpenAI 兼容 API)
-OLLAMA_BASE_URL   = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
-OLLAMA_API_KEY    = os.getenv("OLLAMA_API_KEY", "ollama")  # 本地随便填
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-OLLAMA_LLM_MODEL   = os.getenv("OLLAMA_LLM_MODEL", "deepseek-r1:7b")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY") or None
+COLLECTION = os.getenv("QDRANT_COLLECTION", "clinic_knowledge")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:7b")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 CLEAN_THINK = os.getenv("CLEAN_THINK", "true").lower() == "true"
 
-app = FastAPI(title="Ecom RAG Support API (Ollama)")
-qdrant = QdrantClient(url=QDRANT_URL)
-ollama = OpenAI(api_key=OLLAMA_API_KEY, base_url=OLLAMA_BASE_URL)
+BASE_DIR = Path(__file__).resolve().parent
+DEMO_PAGE = BASE_DIR / "static" / "index.html"
 
-# ---- Schemas ----------------------------------------------------------------
+app = FastAPI(title="Clinic RAG Support API")
+qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+
+
 class IngestItem(BaseModel):
-    text: str
-    meta: dict = {}
+    text: str = Field(..., min_length=1)
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
-class ChatRequest(BaseModel):
-    query: str
-    k: int = 5
-    filters: Optional[dict] = None
 
-# ---- Helpers ----------------------------------------------------------------
-def embed(texts: List[str]) -> List[List[float]]:
-    """Create embeddings via Ollama (OpenAI-compatible)."""
-    resp = ollama.embeddings.create(model=OLLAMA_EMBED_MODEL, input=texts)
-    return [item.embedding for item in resp.data]
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    k: int = Field(default=5, ge=1, le=10)
+    filters: Optional[Dict[str, Any]] = None
 
-def build_filter(d: Optional[dict]):
-    if not d:
-        return None
-    return Filter(must=[FieldCondition(key=k, match=MatchValue(value=v)) for k, v in d.items()])
 
-def _get_collection_dim(info) -> Optional[int]:
-    """Safely read current vector size from Qdrant get_collection() result."""
-    # qdrant-client 不同版本返回对象/字典，这里都兼容
+def _ollama_url(path: str) -> str:
+    base = OLLAMA_BASE_URL.rstrip("/")
+    return f"{base}{path}"
+
+
+def _ollama_post(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        _ollama_url(path),
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
-        return info.config.params.vectors.size  # 新版对象
+        with urllib.request.urlopen(req, timeout=120) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=500, detail=f"Ollama request failed: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not reach Ollama at {OLLAMA_BASE_URL}. Is Ollama running?",
+        ) from exc
+
+
+def embed_texts(texts: List[str]) -> List[List[float]]:
+    if not EMBEDDING_MODEL:
+        raise HTTPException(status_code=500, detail="EMBEDDING_MODEL is not configured.")
+
+    data = _ollama_post("/api/embed", {"model": EMBEDDING_MODEL, "input": texts})
+    embeddings = data.get("embeddings")
+    if not embeddings:
+        raise HTTPException(status_code=500, detail="Ollama did not return embeddings.")
+    return embeddings
+
+
+def chat_with_context(question: str, contexts: List[str]) -> str:
+    system_prompt = (
+        "You are a clinic management software support assistant. "
+        "Answer using the provided knowledge base context when possible. "
+        "Be clear, practical, and concise. "
+        "If the knowledge base does not support the answer, say you do not know."
+    )
+    context_block = "\n\n".join(f"Source snippet:\n{context}" for context in contexts) if contexts else "No relevant knowledge found."
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"Clinic support question: {question}\n\n"
+                    f"Knowledge base context:\n{context_block}\n\n"
+                    "Answer with a direct support response."
+                ),
+            },
+        ],
+    }
+    data = _ollama_post("/api/chat", payload)
+    message = data.get("message", {})
+    raw_answer = message.get("content", "").strip()
+    if not raw_answer:
+        raise HTTPException(status_code=500, detail="Ollama did not return an answer.")
+    if CLEAN_THINK:
+        return re.sub(r"<think>.*?</think>", "", raw_answer, flags=re.DOTALL).strip()
+    return raw_answer
+
+
+def build_filter(filter_values: Optional[Dict[str, Any]]) -> Optional[Filter]:
+    if not filter_values:
+        return None
+    return Filter(
+        must=[FieldCondition(key=key, match=MatchValue(value=value)) for key, value in filter_values.items()]
+    )
+
+
+def _get_collection_dim(info: Any) -> Optional[int]:
+    try:
+        return info.config.params.vectors.size
     except Exception:
         try:
-            return info["config"]["params"]["vectors"]["size"]  # 旧版字典
+            return info["config"]["params"]["vectors"]["size"]
         except Exception:
             return None
 
-def ensure_collection():
-    """Create collection if missing; recreate only if dim mismatch."""
-    target_dim = len(embed(["ping"])[0])
+
+def ensure_collection() -> None:
+    target_dim = len(embed_texts(["clinic support health check"])[0])
     try:
         info = qdrant.get_collection(COLLECTION)
         current_dim = _get_collection_dim(info)
@@ -75,77 +142,86 @@ def ensure_collection():
                 vectors_config=VectorParams(size=target_dim, distance=Distance.COSINE),
             )
     except Exception:
-        # 不存在则创建
         qdrant.recreate_collection(
             collection_name=COLLECTION,
             vectors_config=VectorParams(size=target_dim, distance=Distance.COSINE),
         )
 
+
 @app.on_event("startup")
-def startup_event():
+def startup_event() -> None:
     ensure_collection()
 
-# ---- Routes -----------------------------------------------------------------
+
+@app.get("/")
+def demo_page() -> FileResponse:
+    if not DEMO_PAGE.exists():
+        raise HTTPException(status_code=404, detail="Demo page not found.")
+    return FileResponse(DEMO_PAGE)
+
+
+@app.get("/health")
+def health() -> Dict[str, str]:
+    return {"status": "ok", "service": "clinic-rag-support-api"}
+
+
 @app.post("/ingest")
-def ingest(items: List[IngestItem]):
-    vectors = embed([it.text for it in items])
+def ingest(items: List[IngestItem]) -> Dict[str, Any]:
+    vectors = embed_texts([item.text for item in items])
     points = []
-    for v, it in zip(vectors, items):
-        points.append(PointStruct(id=str(uuid.uuid4()), vector=v, payload={"text": it.text, **(it.meta or {})}))
+    for vector, item in zip(vectors, items):
+        payload = {"text": item.text, **(item.meta or {})}
+        points.append(PointStruct(id=str(uuid.uuid4()), vector=vector, payload=payload))
     qdrant.upsert(collection_name=COLLECTION, points=points)
-    return {"ok": True, "count": len(points)}
+    return {"ok": True, "message": "Knowledge chunks stored.", "count": len(points)}
+
+
+@app.post("/ask")
+def ask(req: AskRequest) -> Dict[str, Any]:
+    query_vector = embed_texts([req.question])[0]
+    results = qdrant.search(
+        collection_name=COLLECTION,
+        query_vector=query_vector,
+        limit=req.k,
+        query_filter=build_filter(req.filters),
+    )
+
+    contexts = [result.payload.get("text", "") for result in results]
+    sources = [
+        {
+            "source": result.payload.get("source", "unknown"),
+            "title": result.payload.get("title", result.payload.get("source", "unknown")),
+            "chunk_index": result.payload.get("chunk_index"),
+            "score": result.score,
+        }
+        for result in results
+    ]
+    answer = chat_with_context(req.question, contexts)
+    return {"answer": answer, "sources": sources, "contexts": contexts}
+
 
 @app.post("/chat")
-def chat(req: ChatRequest):
-    # retrieve
-    qvec = embed([req.query])[0]
-    flt = build_filter(req.filters)
-    hits = qdrant.search(collection_name=COLLECTION, query_vector=qvec, limit=req.k, query_filter=flt)
-    contexts = [h.payload.get("text", "") for h in hits]
+def chat(req: AskRequest) -> Dict[str, Any]:
+    return ask(req)
 
-    # prompt
-    system_prompt = (
-        "You are an e-commerce support assistant. "
-        "Use the provided knowledge when possible. "
-        "Answer directly without showing your reasoning process. "
-        "If unsure, say you don't know."
-    )
-    context_block = "\n".join(f"- {c}" for c in contexts) if contexts else "(no relevant knowledge found)"
-    user_msg = f"Customer question: {req.query}\n\nRelevant knowledge:\n{context_block}\n\nAnswer:"
-
-    try:
-        resp = ollama.chat.completions.create(
-            model=OLLAMA_LLM_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2,
-        )
-        choice = resp.choices[0].message
-        raw_answer = choice["content"] if isinstance(choice, dict) else choice.content
-        clean_answer = re.sub(r"<think>.*?</think>", "", raw_answer, flags=re.DOTALL).strip() if CLEAN_THINK else raw_answer
-
-        return {"answer": clean_answer, "contexts": contexts}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM call failed: {e}")
 
 @app.get("/debug/env")
-def debug_env():
+def debug_env() -> Dict[str, Any]:
     return {
         "QDRANT_URL": QDRANT_URL,
+        "QDRANT_API_KEY_SET": bool(QDRANT_API_KEY),
         "COLLECTION": COLLECTION,
         "OLLAMA_BASE_URL": OLLAMA_BASE_URL,
-        "OLLAMA_EMBED_MODEL": OLLAMA_EMBED_MODEL,
-        "OLLAMA_LLM_MODEL": OLLAMA_LLM_MODEL,
+        "OLLAMA_MODEL": OLLAMA_MODEL,
+        "EMBEDDING_MODEL": EMBEDDING_MODEL,
         "CLEAN_THINK": CLEAN_THINK,
     }
 
+
 @app.get("/debug/collection")
-def debug_collection():
+def debug_collection() -> Dict[str, Any]:
     try:
         info = qdrant.get_collection(COLLECTION)
         return {"ok": True, "dim": _get_collection_dim(info), "raw": str(info)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"get_collection failed: {e}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"get_collection failed: {exc}") from exc

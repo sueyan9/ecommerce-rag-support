@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clinic RAG Support Demo</title>
+    <style>
+      :root {
+        --bg: #edf6f2;
+        --panel: rgba(255, 255, 255, 0.92);
+        --panel-strong: #ffffff;
+        --text: #15302b;
+        --muted: #4d6761;
+        --line: rgba(21, 48, 43, 0.12);
+        --accent: #0f766e;
+        --accent-dark: #115e59;
+        --accent-soft: #d7f3ec;
+        --shadow: 0 24px 70px rgba(15, 118, 110, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 26%),
+          radial-gradient(circle at bottom right, rgba(20, 184, 166, 0.14), transparent 30%),
+          linear-gradient(180deg, #f8fffc 0%, var(--bg) 100%);
+      }
+
+      .shell {
+        width: min(1120px, calc(100% - 32px));
+        margin: 40px auto;
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 24px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+      }
+
+      .hero {
+        padding: 32px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -80px -110px auto;
+        width: 220px;
+        height: 220px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(15, 118, 110, 0.18), transparent 68%);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-dark);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 18px 0 14px;
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 0.98;
+        letter-spacing: -0.03em;
+      }
+
+      .lead {
+        max-width: 58ch;
+        font-size: 17px;
+        line-height: 1.7;
+        color: #32514a;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      .stat {
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid rgba(21, 48, 43, 0.08);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 24px;
+        margin-bottom: 4px;
+      }
+
+      .stat span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .panel h2 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+
+      .panel p {
+        margin: 0 0 18px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .prompt-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .prompt-chip {
+        border: 0;
+        background: #fff;
+        border-radius: 999px;
+        padding: 10px 14px;
+        color: var(--accent-dark);
+        box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.22);
+        cursor: pointer;
+      }
+
+      form {
+        display: grid;
+        gap: 14px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 136px;
+        border: 1px solid rgba(21, 48, 43, 0.16);
+        border-radius: 18px;
+        padding: 16px;
+        resize: vertical;
+        font: inherit;
+        color: var(--text);
+        background: var(--panel-strong);
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, #14b8a6, #0f766e);
+        color: white;
+      }
+
+      .button-secondary {
+        background: white;
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px rgba(21, 48, 43, 0.14);
+      }
+
+      .status {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .response {
+        display: grid;
+        gap: 16px;
+      }
+
+      .response-block {
+        padding: 18px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.76);
+        border: 1px solid rgba(21, 48, 43, 0.1);
+      }
+
+      .response-block h3 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+
+      .response-block p,
+      .response-block li {
+        line-height: 1.65;
+      }
+
+      .context-list {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .mini-flow {
+        display: grid;
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .flow-item {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .flow-index {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #99f6e4, #14b8a6);
+        color: #0f3d39;
+        font-weight: 800;
+      }
+
+      .flow-copy strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .flow-copy span {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      @media (max-width: 920px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .stats {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card hero">
+        <span class="eyebrow">Local-First Clinic RAG</span>
+        <h1>Clinic support answers, grounded in your SaaS knowledge base.</h1>
+        <p class="lead">
+          This demo shows a lightweight clinic management support assistant built with
+          FastAPI, Qdrant, and Ollama. Ask a product or policy question and the app
+          retrieves the most relevant clinic support context before generating an answer.
+        </p>
+
+        <div class="stats">
+          <div class="stat">
+            <strong>FastAPI</strong>
+            <span>API for ingestion, retrieval, and support answers</span>
+          </div>
+          <div class="stat">
+            <strong>Qdrant</strong>
+            <span>Semantic search over clinic knowledge chunks</span>
+          </div>
+          <div class="stat">
+            <strong>Ollama</strong>
+            <span>Local models for embeddings and answer generation</span>
+          </div>
+        </div>
+
+        <div class="mini-flow">
+          <div class="flow-item">
+            <div class="flow-index">1</div>
+            <div class="flow-copy">
+              <strong>Ask a clinic support question</strong>
+              <span>Examples include booking flow, invoices, privacy, schedules, and branches.</span>
+            </div>
+          </div>
+          <div class="flow-item">
+            <div class="flow-index">2</div>
+            <div class="flow-copy">
+              <strong>Retrieve supporting knowledge</strong>
+              <span>The question is embedded locally and matched against Qdrant chunks.</span>
+            </div>
+          </div>
+          <div class="flow-item">
+            <div class="flow-index">3</div>
+            <div class="flow-copy">
+              <strong>Generate a grounded answer</strong>
+              <span>Ollama answers from retrieved context instead of relying on unsupported guesses.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card panel">
+        <h2>Try the assistant</h2>
+        <p>Use a sample prompt or type your own clinic SaaS support question below.</p>
+
+        <div class="prompt-list">
+          <button class="prompt-chip" type="button" data-prompt="How does the booking workflow handle pending confirmations?">Booking workflow</button>
+          <button class="prompt-chip" type="button" data-prompt="What happens when a practitioner works across two branches in the same week?">Practitioner schedule</button>
+          <button class="prompt-chip" type="button" data-prompt="Which invoice fields are required before a bill can be finalized?">Invoice rules</button>
+        </div>
+
+        <form id="chat-form">
+          <textarea
+            id="query"
+            name="query"
+            placeholder="Ask a clinic support question, for example: How are privacy-sensitive notes handled in the booking workflow?"
+            required
+          ></textarea>
+
+          <div class="actions">
+            <button class="button button-primary" type="submit">Ask Assistant</button>
+            <button class="button button-secondary" id="clear-button" type="button">Clear</button>
+            <span class="status" id="status">Ready for a question.</span>
+          </div>
+        </form>
+
+        <div class="response" id="response" hidden>
+          <div class="response-block">
+            <h3>Answer</h3>
+            <p id="answer-text"></p>
+          </div>
+
+          <div class="response-block">
+            <h3>Sources</h3>
+            <ol class="context-list" id="source-list"></ol>
+          </div>
+
+          <div class="response-block">
+            <h3>Retrieved Context</h3>
+            <ol class="context-list" id="context-list"></ol>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("chat-form");
+      const queryInput = document.getElementById("query");
+      const statusEl = document.getElementById("status");
+      const responseEl = document.getElementById("response");
+      const answerTextEl = document.getElementById("answer-text");
+      const sourceListEl = document.getElementById("source-list");
+      const contextListEl = document.getElementById("context-list");
+      const clearButton = document.getElementById("clear-button");
+      const promptButtons = document.querySelectorAll("[data-prompt]");
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.style.color = isError ? "#b91c1c" : "";
+      }
+
+      function renderSources(sources) {
+        sourceListEl.innerHTML = "";
+        if (!sources || sources.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No source metadata was returned.";
+          sourceListEl.appendChild(item);
+          return;
+        }
+
+        sources.forEach((source) => {
+          const item = document.createElement("li");
+          const title = source.title || source.source || "unknown";
+          const chunk = source.chunk_index ?? "?";
+          item.textContent = `${title} (chunk ${chunk})`;
+          sourceListEl.appendChild(item);
+        });
+      }
+
+      function renderContexts(contexts) {
+        contextListEl.innerHTML = "";
+        if (!contexts || contexts.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No context was returned from retrieval.";
+          contextListEl.appendChild(item);
+          return;
+        }
+
+        contexts.forEach((context) => {
+          const item = document.createElement("li");
+          item.textContent = context;
+          contextListEl.appendChild(item);
+        });
+      }
+
+      promptButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          queryInput.value = button.dataset.prompt || "";
+          queryInput.focus();
+        });
+      });
+
+      clearButton.addEventListener("click", () => {
+        form.reset();
+        responseEl.hidden = true;
+        answerTextEl.textContent = "";
+        sourceListEl.innerHTML = "";
+        contextListEl.innerHTML = "";
+        setStatus("Ready for a question.");
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const query = queryInput.value.trim();
+
+        if (!query) {
+          setStatus("Please enter a question first.", true);
+          return;
+        }
+
+        setStatus("Searching clinic knowledge and generating an answer...");
+
+        try {
+          const res = await fetch("/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: query, k: 5 }),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            const detail = data.detail || "Request failed.";
+            throw new Error(detail);
+          }
+
+          answerTextEl.textContent = data.answer || "No answer returned.";
+          renderSources(data.sources || []);
+          renderContexts(data.contexts || []);
+          responseEl.hidden = false;
+          setStatus("Answer ready.");
+        } catch (error) {
+          responseEl.hidden = true;
+          setStatus(error.message || "Something went wrong.", true);
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,27 +1,153 @@
-# Ecom RAG Support API
+# Clinic RAG Support API
 
-A lightweight **E-commerce Retrieval-Augmented Generation (RAG) API** powered by **FastAPI + Qdrant + Ollama (DeepSeek local models)**.  
-It lets you ingest product knowledge (FAQs, SKUs, policies) and answer customer queries with local LLMs.
+Clinic RAG Support API is a lightweight local-first Retrieval-Augmented Generation API for clinic management software, powered by FastAPI, Qdrant, and Ollama local models.
 
----
+It is designed to answer support questions about a clinic management system using demo knowledge-base documents. Typical topics include product usage, booking workflow, practitioner schedule rules, branch management, invoicing policy, pricing policy, privacy policy, and general business rules.
 
-## 🚀 Quick Start
+## Why local-first AI for clinic software
+
+Clinic software often contains operationally sensitive information. A local-first setup helps teams prototype AI support workflows without sending prompts, embeddings, or retrieved context to external AI vendors. This makes it easier to:
+
+- keep early experiments private and developer-controlled
+- reduce data exposure risk while testing support scenarios
+- work offline or within restricted internal environments
+- prepare an open-source baseline without shipping any real clinic or patient data
+
+## What the project does
+
+The project implements a simple RAG flow:
+
+1. Load markdown files from the local knowledge base.
+2. Split documents into small chunks.
+3. Generate embeddings locally with Ollama.
+4. Store chunks and metadata in Qdrant.
+5. Retrieve relevant chunks for a support question.
+6. Send the retrieved context to an Ollama chat model.
+7. Return a grounded answer with source references.
+
+## Tech stack
+
+- FastAPI for the API and local demo page
+- Qdrant for vector storage and retrieval
+- Ollama for local embeddings and answer generation
+- Python standard-library HTTP client for calling Ollama locally
+
+## Project structure
+
+- [README.md](/Users/xuyan/vs_code/ecommerce-rag-support/README.md)
+- [apps/api/main.py](/Users/xuyan/vs_code/ecommerce-rag-support/apps/api/main.py): FastAPI app, retrieval, and answer generation
+- [apps/api/static/index.html](/Users/xuyan/vs_code/ecommerce-rag-support/apps/api/static/index.html): local demo UI
+- [ingest/ingest.py](/Users/xuyan/vs_code/ecommerce-rag-support/ingest/ingest.py): markdown ingestion script
+- [knowledge-base/](/Users/xuyan/vs_code/ecommerce-rag-support/knowledge-base): demo clinic support documents only
+- [docker-compose.yml](/Users/xuyan/vs_code/ecommerce-rag-support/docker-compose.yml): local Qdrant service
+- [.env.example](/Users/xuyan/vs_code/ecommerce-rag-support/.env.example): safe local configuration template
+
+## How to run locally
 
 ### 1. Requirements
-- Python **3.11+**
-- [Docker](https://www.docker.com/) (for Qdrant)
-- [Ollama](https://ollama.com) (for DeepSeek local models)
-- macOS / Linux (Apple Silicon or GPU recommended)
 
-### 2. Run the API
+- Python 3.11+
+- [Docker](https://www.docker.com/)
+- [Ollama](https://ollama.com/)
+
+### 2. Create your local environment file
+
+```bash
+cp .env.example .env
+```
+
+Set `EMBEDDING_MODEL` to a local Ollama embedding model you have pulled, for example `nomic-embed-text`.
+
+### 3. Start Qdrant
+
+```bash
+docker compose up -d
+```
+
+### 4. Start Ollama and pull your models
+
+Example:
+
+```bash
+ollama pull deepseek-r1:7b
+ollama pull nomic-embed-text
+```
+
+### 5. Install Python dependencies
+
+```bash
+pip install fastapi uvicorn python-dotenv qdrant-client
+```
+
+### 6. Ingest the knowledge base
+
+```bash
+python ingest/ingest.py
+```
+
+### 7. Run the API
+
 ```bash
 python -m uvicorn apps.api.main:app --reload --port 8000
 ```
 
----
+Open [http://localhost:8000](http://localhost:8000) to use the local demo page.
 
-## 📖 References
+## How to ingest knowledge-base files
+
+The ingestion script reads every `*.md` file from [knowledge-base/](/Users/xuyan/vs_code/ecommerce-rag-support/knowledge-base), splits them into chunks, creates embeddings locally with Ollama, and stores the chunks in Qdrant.
+
+You can add more demo markdown files to that folder and rerun:
+
+```bash
+python ingest/ingest.py
+```
+
+Each stored chunk includes simple source metadata so answers can cite where the retrieved context came from.
+
+## How to ask questions
+
+Use the demo page or call the API directly:
+
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How does branch-level invoicing work for a practitioner who works at two locations?","k":5}'
+```
+
+The response includes:
+
+- `answer`: grounded clinic support answer
+- `sources`: source file and chunk metadata
+- `contexts`: retrieved chunk text
+
+## What should not be committed to GitHub
+
+Do not commit:
+
+- `.env`
+- API keys
+- production credentials
+- real database files
+- real Qdrant storage
+- uploads and logs
+- real patient data
+- real clinic data
+- private business rules that are not intended for open-source publication
+
+This repository should contain demo content only.
+
+## Future roadmap
+
+- agent workflow for more structured support resolution
+- tool calling for workflow-aware answers
+- retrieval and answer evaluation
+- guardrails for unsupported or sensitive requests
+- observability for retrieval quality and model behavior
+- feedback loop for improving documents and prompts
+
+## References
+
 - [FastAPI Docs](https://fastapi.tiangolo.com/)
 - [Qdrant Docs](https://qdrant.tech/documentation/)
-- [Ollama Docs](https://github.com/ollama/ollama)
-- [DeepSeek Models](https://huggingface.co/deepseek-ai)
+- [Ollama Docs](https://ollama.com/)
